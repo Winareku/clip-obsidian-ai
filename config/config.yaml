@@ -1,0 +1,69 @@
+# clip-obsidian-ai Configuration File
+# Located at: ~/.config/clip-obsidian-ai/config.yaml
+
+# ─────────────────────────────────────────────
+# LLM Configuration (Ollama)
+# ─────────────────────────────────────────────
+llm:
+  provider: "ollama"
+  model: "llama3.2"          # Change to any model you have pulled (e.g. mistral, gemma2)
+  host: "http://localhost:11434"
+  timeout: 120               # Seconds to wait for LLM response
+  # Max characters of input text sent to the LLM.
+  # Ollama has context limits; tune this to your model's context window.
+  max_input_chars: 12000
+
+# ─────────────────────────────────────────────
+# Clipboard Configuration
+# ─────────────────────────────────────────────
+clipboard:
+  # "wl-clipboard" (Wayland) | "xclip" (X11) | "auto" (detect automatically)
+  backend: "auto"
+
+# ─────────────────────────────────────────────
+# UI / Prompt Configuration
+# ─────────────────────────────────────────────
+ui:
+  # "wofi" | "rofi" | "zenity" | "none" (skip confirmation dialog)
+  backend: "auto"
+  prompt_message: "¿Procesar este texto con IA?"
+  confirm_label: "✅ Sí, procesar"
+  cancel_label: "❌ Cancelar"
+  # Max characters to preview in the UI confirmation dialog
+  preview_chars: 300
+
+# ─────────────────────────────────────────────
+# Notification Configuration
+# ─────────────────────────────────────────────
+notifications:
+  enabled: true
+  # "notify-send" | "none"
+  backend: "notify-send"
+  app_name: "clip-obsidian-ai"
+  timeout_ms: 4000
+
+# ─────────────────────────────────────────────
+# Dir Mode Configuration
+# ─────────────────────────────────────────────
+dir_mode:
+  output_filename: "notas_generadas.md"
+  # Supported extensions (order matters for display only)
+  supported_extensions:
+    - ".pdf"
+    - ".pptx"
+    - ".docx"
+    - ".txt"
+    - ".md"
+  # If true, processes files recursively in subdirectories
+  recursive: false
+  # Separator inserted between each file's extracted content
+  file_separator: "\n\n---\n\n"
+
+# ─────────────────────────────────────────────
+# Logging
+# ─────────────────────────────────────────────
+logging:
+  # "DEBUG" | "INFO" | "WARNING" | "ERROR"
+  level: "INFO"
+  # If true, adds timestamps to console output
+  show_timestamps: false

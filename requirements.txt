@@ -1,0 +1,19 @@
+# clip-obsidian-ai — Python dependencies
+#
+# Install with:  pip install -r requirements.txt
+#
+# Core (required)
+PyYAML>=6.0
+
+# Document extractors (install the ones you need)
+pdfplumber>=0.11.0       # PDF extraction (preferred)
+pypdf>=4.0.0             # PDF extraction (fallback if pdfplumber unavailable)
+python-pptx>=1.0.0       # PowerPoint extraction
+python-docx>=1.1.0       # Word document extraction
+
+# Note: wl-clipboard, xclip, wofi, rofi, zenity, and notify-send
+# are system packages — install them via your distro's package manager.
+#
+# Arch/Manjaro:   sudo pacman -S wl-clipboard wofi libnotify
+# Ubuntu/Debian:  sudo apt install wl-clipboard rofi libnotify-bin
+# Fedora:         sudo dnf install wl-clipboard rofi libnotify
