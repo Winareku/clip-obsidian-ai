@@ -161,13 +161,7 @@ def run_clip_mode(config: AppConfig) -> int:
         confirm=config.ui.confirm_label,
         cancel=config.ui.cancel_label,
     )
-    llm = AdapterFactory.build_llm(
-        provider=config.llm.provider,
-        model=config.llm.model,
-        host=config.llm.host,
-        timeout=config.llm.timeout,
-        format_file=config.format_file,
-    )
+    llm = AdapterFactory.build_resilient_llm(config)
     notifier = AdapterFactory.build_notifier(
         enabled=config.notifications.enabled,
         backend=config.notifications.backend,

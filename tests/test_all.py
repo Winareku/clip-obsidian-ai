@@ -235,6 +235,118 @@ class TestAdapterFactory:
         with pytest.raises(ValueError, match="Unknown LLM provider"):
             AdapterFactory.build_llm("gpt-99", "model", "http://x", 30)
 
+    def test_build_llm_mock_provider(self):
+        from adapters import AdapterFactory, MockLLMAdapter
+        llm = AdapterFactory.build_llm("mock", "any-model", "http://x", 30)
+        assert isinstance(llm, MockLLMAdapter)
+
+    def test_build_llm_mock_model(self):
+        from adapters import AdapterFactory, MockLLMAdapter
+        llm = AdapterFactory.build_llm("ollama", "mock", "http://x", 30)
+        assert isinstance(llm, MockLLMAdapter)
+
+
+class TestMockLLMAdapter:
+    def test_generate_returns_mocked_markdown(self):
+        from adapters import MockLLMAdapter
+        adapter = MockLLMAdapter()
+        res = adapter.generate("Hello computer")
+        assert "Resumen de IA Simulado" in res
+        assert "Hello computer..." in res
+
+
+class TestGeminiAdapter:
+    def test_generate_calls_gemini_api(self):
+        import json
+        from adapters import GeminiAdapter
+        from unittest.mock import patch, MagicMock
+
+        fake_response_body = json.dumps({
+            "candidates": [
+                {
+                    "content": {
+                        "parts": [
+                            {"text": "Gemini generated text"}
+                        ]
+                    }
+                }
+            ]
+        }).encode("utf-8")
+
+        mock_resp = MagicMock()
+        mock_resp.__enter__ = lambda s: s
+        mock_resp.__exit__ = MagicMock(return_value=False)
+        mock_resp.read.return_value = fake_response_body
+
+        adapter = GeminiAdapter(api_key="fake_key", model="gemini-1.5-flash")
+
+        with patch("urllib.request.urlopen", return_value=mock_resp) as mock_urlopen:
+            result = adapter.generate("Hello Gemini", "System prompt")
+            
+            mock_urlopen.assert_called_once()
+            args, kwargs = mock_urlopen.call_args
+            req = args[0]
+            assert req.full_url == "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=fake_key"
+            assert req.method == "POST"
+            
+            payload = json.loads(req.data.decode("utf-8"))
+            assert payload["contents"][0]["parts"][0]["text"] == "Hello Gemini"
+            assert payload["systemInstruction"]["parts"][0]["text"] == "System prompt"
+
+        assert result == "Gemini generated text"
+
+
+class TestResilientLLM:
+    def test_build_resilient_llm_chooses_ollama_if_online(self):
+        from adapters import AdapterFactory, OllamaAdapter
+        from config_manager import AppConfig
+        from unittest.mock import patch, MagicMock
+
+        config = AppConfig()
+        config.llm.provider = "auto"
+        config.llm.host = "http://localhost:11434"
+
+        mock_resp = MagicMock()
+        mock_resp.__enter__ = lambda s: s
+        mock_resp.__exit__ = MagicMock(return_value=False)
+        mock_resp.status = 200
+
+        with patch("urllib.request.urlopen", return_value=mock_resp):
+            llm = AdapterFactory.build_resilient_llm(config)
+
+        assert isinstance(llm, OllamaAdapter)
+
+    def test_build_resilient_llm_falls_back_to_gemini(self):
+        from adapters import AdapterFactory, GeminiAdapter
+        from config_manager import AppConfig
+        from unittest.mock import patch
+
+        config = AppConfig()
+        config.llm.provider = "auto"
+        config.llm.api_key = "test_key"
+        config.llm.host = "http://localhost:11434"
+
+        with patch("urllib.request.urlopen", side_effect=Exception("Ollama down")):
+            llm = AdapterFactory.build_resilient_llm(config)
+
+        assert isinstance(llm, GeminiAdapter)
+        assert llm._api_key == "test_key"
+
+    def test_build_resilient_llm_falls_back_to_mock_if_no_key_and_ollama_down(self):
+        from adapters import AdapterFactory, MockLLMAdapter
+        from config_manager import AppConfig
+        from unittest.mock import patch
+
+        config = AppConfig()
+        config.llm.provider = "auto"
+        config.llm.api_key = ""
+        config.llm.host = "http://localhost:11434"
+
+        with patch("urllib.request.urlopen", side_effect=Exception("Ollama down")):
+            llm = AdapterFactory.build_resilient_llm(config)
+
+        assert isinstance(llm, MockLLMAdapter)
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Clip Mode Tests

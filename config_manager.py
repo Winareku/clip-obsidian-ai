@@ -43,6 +43,7 @@ class LLMConfig:
     host: str = "http://localhost:11434"
     timeout: int = 120
     max_input_chars: int = 12000
+    api_key: str = ""
 
 
 @dataclass
@@ -144,12 +145,16 @@ def load_config() -> AppConfig:
     else:
         logger.warning("config.yaml not found – using built-in defaults.")
 
+    import os
     llm_raw = raw.get("llm", {})
     clip_raw = raw.get("clipboard", {})
     ui_raw = raw.get("ui", {})
     notif_raw = raw.get("notifications", {})
     dir_raw = raw.get("dir_mode", {})
     log_raw = raw.get("logging", {})
+
+    env_key = os.environ.get("GEMINI_API_KEY")
+    api_key_val = env_key if env_key is not None else llm_raw.get("api_key", "")
 
     config = AppConfig(
         llm=LLMConfig(
@@ -158,6 +163,7 @@ def load_config() -> AppConfig:
             host=llm_raw.get("host", "http://localhost:11434"),
             timeout=int(llm_raw.get("timeout", 120)),
             max_input_chars=int(llm_raw.get("max_input_chars", 12000)),
+            api_key=api_key_val,
         ),
         clipboard=ClipboardConfig(
             backend=clip_raw.get("backend", "auto"),

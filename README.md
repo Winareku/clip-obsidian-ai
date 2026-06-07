@@ -55,16 +55,24 @@ sudo apt install libnotify-bin
 
 ## Instalación
 
+Para instalar la aplicación de forma permanente e independiente en tu sistema:
+
 ```bash
 git clone https://github.com/winareku/clip-obsidian-ai
 cd clip-obsidian-ai
 
-# Instalación automática (deps Python + config + launcher)
-chmod +x install.sh && ./install.sh
+# Ejecutar el instalador guiado interactivo
+python install.py
 
 # Verificar que todo esté listo
 clip-obsidian-ai --check
 ```
+
+### ¿Qué hace el instalador?
+1. Copia de forma aislada los archivos del proyecto a `~/.local/share/clip-obsidian-ai/`.
+2. Genera un entorno virtual Python (`venv`) en dicho directorio de infraestructura e instala de manera silenciosa las dependencias necesarias.
+3. Crea un script ejecutable en `~/.local/bin/clip-obsidian-ai` que enlaza al `venv` de la aplicación.
+4. Lanza un **Asistente de Configuración Guiado** interactivo para configurar el proveedor de IA (Ollama, Gemini, auto o mock), solicitando de forma segura tu API Key de Google AI Studio y sugiriendo modelos por defecto.
 
 La instalación copia los archivos de configuración por defecto a:
 ```

@@ -92,9 +92,17 @@ class XClipAdapter(ClipboardAdapter):
         return result.stdout
 
     def write(self, text: str) -> None:
-        result = _run(["xclip", "-selection", "clipboard"], input_text=text)
-        if result.returncode != 0:
-            logger.error("xclip write failed: %s", result.stderr.strip())
+        try:
+            subprocess.run(
+                ["xclip", "-selection", "clipboard"],
+                input=text,
+                text=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=10,
+            )
+        except subprocess.SubprocessError as exc:
+            logger.error("xclip write failed: %s", exc)
 
 
 class XdoToolClipboardAdapter(ClipboardAdapter):
@@ -135,18 +143,56 @@ class WofiAdapter(UIAdapter):
         )
         return result.stdout.strip() == confirm_label
 
-
 class RofiAdapter(UIAdapter):
     """Confirmation via rofi (X11/Wayland application launcher)."""
 
     def confirm(self, message: str, confirm_label: str, cancel_label: str) -> bool:
         choices = f"{confirm_label}\n{cancel_label}"
-        result = _run(
-            ["rofi", "-dmenu", "-p", message, "-lines", "2"],
-            input_text=choices,
-        )
-        return result.stdout.strip() == confirm_label
 
+        try:
+            result = subprocess.run(
+                [
+                    "rofi",
+                    "-dmenu",
+                    "-p",
+                    "clip-obsidian-ai",
+                    "-mesg",
+                    message,
+                    "-theme-str",
+                    """
+                    window {
+                        width: 600px;
+                    }
+
+                    mainbox {
+                        children: [message, listview];
+                    }
+
+                    message {
+                        expand: true;
+                    }
+
+                    listview {
+                        lines: 2;
+                        expand: false;
+                        fixed-height: false;
+                        dynamic: true;
+                    }
+                    """,
+                ],
+                input=choices,
+                capture_output=True,
+                text=True,
+            )
+
+        except Exception as exc:
+            logger.error("RofiAdapter: rofi invocation failed: %s", exc)
+            return False
+
+        if result.returncode != 0:
+            return False
+
+        return result.stdout.strip() == confirm_label
 
 class ZenityAdapter(UIAdapter):
     """Confirmation via zenity (GTK dialog)."""
@@ -337,6 +383,115 @@ class OllamaAdapter(LLMAdapter):
             raise ValueError(f"Unexpected Ollama response format: {exc}") from exc
 
 
+class GeminiAdapter(LLMAdapter):
+    """
+    LLM adapter for Google Gemini API.
+    """
+
+    def __init__(
+        self,
+        api_key: str,
+        model: str = "gemini-1.5-flash",
+        timeout: int = 120,
+        format_file: Optional[Path] = None,
+    ) -> None:
+        self._api_key = api_key
+        self._model = model or "gemini-1.5-flash"
+        self._timeout = timeout
+        self._format_file = format_file
+
+    def generate(self, user_prompt: str, system_prompt: str = "") -> str:
+        """
+        Calls Gemini's generateContent API endpoint.
+        """
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self._model}:generateContent?key={self._api_key}"
+
+        effective_system = self._load_system_prompt(system_prompt)
+
+        payload = {
+            "contents": [
+                {
+                    "parts": [
+                        {"text": user_prompt}
+                    ]
+                }
+            ]
+        }
+
+        if effective_system.strip():
+            payload["systemInstruction"] = {
+                "parts": [
+                    {"text": effective_system}
+                ]
+            }
+
+        data = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(
+            url,
+            data=data,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+
+        logger.debug(
+            "GeminiAdapter: POST %s  model=%s  system=%d chars  user=%d chars",
+            f"https://generativelanguage.googleapis.com/v1beta/models/{self._model}:generateContent",
+            self._model,
+            len(effective_system),
+            len(user_prompt),
+        )
+
+        try:
+            with urllib.request.urlopen(req, timeout=self._timeout) as resp:
+                raw_response = resp.read().decode("utf-8")
+            obj = json.loads(raw_response)
+            return obj["candidates"][0]["content"]["parts"][0]["text"].strip()
+        except urllib.error.HTTPError as exc:
+            try:
+                err_body = exc.read().decode("utf-8")
+                logger.error("Gemini API HTTP Error details: %s", err_body)
+                raise ValueError(f"Gemini API returned error HTTP {exc.code}: {err_body}") from exc
+            except Exception:
+                raise ValueError(f"Gemini API returned error HTTP {exc.code}") from exc
+        except (urllib.error.URLError, ConnectionError) as exc:
+            raise ConnectionError(f"Cannot reach Gemini API: {exc}") from exc
+        except (json.JSONDecodeError, KeyError, IndexError) as exc:
+            raise ValueError(f"Unexpected Gemini API response format: {exc}") from exc
+
+    def _load_system_prompt(self, fallback: str) -> str:
+        if self._format_file and self._format_file.exists():
+            try:
+                return self._format_file.read_text(encoding="utf-8")
+            except OSError as exc:
+                logger.warning("Could not read format.md: %s", exc)
+        return fallback
+
+
+class MockLLMAdapter(LLMAdapter):
+    """
+    Mock LLM adapter that returns a predefined structured Markdown string.
+    """
+
+    def generate(self, user_prompt: str, system_prompt: str = "") -> str:
+        """
+        Simulates generating text from an LLM.
+        """
+        logger.debug("MockLLMAdapter: Simulating LLM generation.")
+        # Predefined structured Markdown response
+        return (
+            "# Resumen de IA Simulado\n\n"
+            "Este es un resumen generado por el adaptador simulado de IA (MockLLMAdapter).\n\n"
+            "## Puntos Clave\n"
+            "- **Simulación Exitosa**: La interfaz gráfica de confirmación y el flujo completo de portapapeles funcionan correctamente.\n"
+            "- **Sin Recursos**: No se requiere de Ollama ni de un modelo de lenguaje local para esta verificación.\n"
+            "- **Preservación**: El portapapeles se ha actualizado con este contenido en Markdown.\n\n"
+            "## Texto Original Recibido (Fragmento)\n"
+            f"> {user_prompt[:100]}...\n\n"
+            "## Conclusión\n"
+            "El sistema está listo para producción una vez que se conecte a un proveedor real como Ollama."
+        )
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # Adapter Factory
 # ══════════════════════════════════════════════════════════════════════════════
@@ -397,8 +552,21 @@ class AdapterFactory:
         host: str,
         timeout: int,
         format_file: Optional[Path] = None,
+        api_key: str = "",
     ) -> LLMAdapter:
-        if provider == "ollama":
+        p_lower = provider.lower() if provider else ""
+        if p_lower == "mock" or (model and model.lower() == "mock"):
+            logger.debug("LLM backend: MockLLMAdapter  model=%s", model)
+            return MockLLMAdapter()
+        if p_lower == "gemini":
+            logger.debug("LLM backend: Gemini  model=%s", model)
+            return GeminiAdapter(
+                api_key=api_key,
+                model=model,
+                timeout=timeout,
+                format_file=format_file,
+            )
+        if p_lower == "ollama":
             logger.debug("LLM backend: Ollama  model=%s  host=%s", model, host)
             return OllamaAdapter(
                 model=model,
@@ -406,4 +574,106 @@ class AdapterFactory:
                 timeout=timeout,
                 format_file=format_file,
             )
-        raise ValueError(f"Unknown LLM provider: '{provider}'. Only 'ollama' is supported.")
+        if p_lower == "auto":
+            # Backward compatibility check for tests when using build_llm with auto
+            import os
+            actual_key = os.environ.get("GEMINI_API_KEY") or api_key
+            ollama_ok = False
+            try:
+                req_url = f"{host.rstrip('/')}/api/tags"
+                with urllib.request.urlopen(req_url, timeout=1) as resp:
+                    if resp.status == 200:
+                        ollama_ok = True
+            except Exception:
+                pass
+            if ollama_ok:
+                return OllamaAdapter(model=model, host=host, timeout=timeout, format_file=format_file)
+            elif actual_key:
+                return GeminiAdapter(api_key=actual_key, model=model, timeout=timeout, format_file=format_file)
+            else:
+                return MockLLMAdapter()
+
+        raise ValueError(f"Unknown LLM provider: '{provider}'. Only 'ollama', 'gemini', 'mock' and 'auto' are supported.")
+
+    @staticmethod
+    def build_resilient_llm(config: AppConfig) -> LLMAdapter:
+        import os
+        from config_manager import AppConfig
+
+        api_key = os.environ.get("GEMINI_API_KEY") or config.llm.api_key
+        provider = config.llm.provider.lower() if config.llm.provider else ""
+
+        if provider == "mock" or (config.llm.model and config.llm.model.lower() == "mock"):
+            logger.debug("build_resilient_llm: explicitly requested mock")
+            return MockLLMAdapter()
+
+        ollama_ok = False
+        if provider in ("auto", "ollama"):
+            host = config.llm.host
+            logger.debug("build_resilient_llm: checking Ollama reachability at %s", host)
+            try:
+                req_url = f"{host.rstrip('/')}/api/tags"
+                with urllib.request.urlopen(req_url, timeout=3) as resp:
+                    if resp.status == 200:
+                        ollama_ok = True
+            except Exception:
+                pass
+
+        if ollama_ok:
+            logger.info("build_resilient_llm: Ollama is reachable. Initializing OllamaAdapter.")
+            return OllamaAdapter(
+                model=config.llm.model,
+                host=config.llm.host,
+                timeout=config.llm.timeout,
+                format_file=config.format_file,
+            )
+
+        # Fallback to Gemini if API Key is available
+        if provider in ("auto", "gemini") or (provider == "ollama" and not ollama_ok):
+            if api_key:
+                logger.warning("Ollama local no disponible. Derivando procesamiento a la nube (Google Gemini)...")
+                try:
+                    notifier = AdapterFactory.build_notifier(
+                        enabled=config.notifications.enabled,
+                        backend=config.notifications.backend,
+                        app_name=config.notifications.app_name,
+                        timeout_ms=config.notifications.timeout_ms,
+                    )
+                    notifier.notify(
+                        "clip-obsidian-ai ☁️",
+                        "Ollama local offline. Derivando procesamiento a Gemini (nube).",
+                        urgency="normal"
+                    )
+                except Exception as exc:
+                    logger.warning("Could not send notification: %s", exc)
+
+                return GeminiAdapter(
+                    api_key=api_key,
+                    model=config.llm.model if config.llm.model and config.llm.model != "mock" else "gemini-1.5-flash",
+                    timeout=config.llm.timeout,
+                    format_file=config.format_file,
+                )
+
+        # Fallback to Mock
+        logger.error(
+            "build_resilient_llm: Neither Ollama nor Gemini API is available. "
+            "Falling back to MockLLMAdapter to prevent crash."
+        )
+        try:
+            notifier = AdapterFactory.build_notifier(
+                enabled=config.notifications.enabled,
+                backend=config.notifications.backend,
+                app_name=config.notifications.app_name,
+                timeout_ms=config.notifications.timeout_ms,
+            )
+            notifier.notify(
+                "clip-obsidian-ai ⚠️",
+                "Sin conexión a Ollama o Gemini. Usando IA simulada (Mock).",
+                urgency="critical"
+            )
+        except Exception as exc:
+            logger.warning("Could not send notification: %s", exc)
+
+        return MockLLMAdapter()
+
+

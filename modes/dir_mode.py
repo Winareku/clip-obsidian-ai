@@ -218,12 +218,6 @@ def run_dir_mode(config: AppConfig, target_dir: Optional[Path] = None) -> int:
     Convenience function: builds all adapters from config and runs dir mode.
     Called directly from main.py.
     """
-    llm = AdapterFactory.build_llm(
-        provider=config.llm.provider,
-        model=config.llm.model,
-        host=config.llm.host,
-        timeout=config.llm.timeout,
-        format_file=config.format_file,
-    )
+    llm = AdapterFactory.build_resilient_llm(config)
     orchestrator = DirMode(config=config, llm=llm)
     return orchestrator.run(target_dir=target_dir)
